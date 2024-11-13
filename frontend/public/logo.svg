@@ -1,0 +1,17 @@
+<!-- <div class="logo-container">
+  <svg width="100" height="32" viewBox="0 0 100 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 0C7.163 0 0 7.163 0 16C0 24.837 7.163 32 16 32C24.837 32 32 24.837 32 16C32 7.163 24.837 0 16 0Z" fill="#7F56D9"/>
+    <path d="M44 8H52V24H44V8Z" fill="#101828"/>
+    <path d="M60 8H76V12H60V8ZM60 14H72V18H60V14ZM60 20H68V24H60V20Z" fill="#101828"/>
+    <path d="M84 8H100V12H84V8ZM84 14H96V18H84V14ZM84 20H92V24H84V20Z" fill="#101828"/>
+  </svg>
+</div> -->
+
+<div class="logo-container">
+  <img src="https://framerusercontent.com/images/pFpeWgK03UT38AQl5d988Epcsc.svg?scale-down-to=512" alt="Logo" width="100" height="32">
+</div>
+
+
+<!-- <div class="logo-container">
+  <img src="https://framerusercontent.com/images/pFpeWgK03UT38AQl5d988Epcsc.svg?scale-down-to=512" alt="Logo" width="100" height="32">
+</div> -->

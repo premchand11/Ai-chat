@@ -1,0 +1,12 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+sqlalchemy==2.0.23
+pymupdf==1.23.7
+langchain==0.0.335
+faiss-cpu==1.7.4
+openai==1.3.5
+python-dotenv==1.0.0
+pydantic==2.5.2
+typing-extensions==4.8.0
+starlette==0.27.0
