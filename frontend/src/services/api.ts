@@ -2,10 +2,6 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
-// export const uploadPDF = async (file: File) => {
-//   // Simulated successful response
-//   return { document_id: 6 };
-// };
 
 
 export const uploadPDF = async (file: File) => {
