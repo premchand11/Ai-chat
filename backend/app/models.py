@@ -10,5 +10,5 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String(255), index=True, nullable=False)
     file_path = Column(String(512), nullable=False)
-    content = Column(Text)  # Using Text for large content
+    content = Column(Text)
     upload_date = Column(DateTime, default=datetime.utcnow)
