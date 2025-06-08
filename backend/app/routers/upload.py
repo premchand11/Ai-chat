@@ -10,114 +10,216 @@ from app.db import get_db
 
 router = APIRouter()
 
-# Configure detailed logging
+# Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Create uploads directory in the current working directory
+# Upload directory
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-logger.info(f"Upload directory created at: {UPLOAD_DIR}")
+logger.info(f"Upload directory ready at: {UPLOAD_DIR}")
 
-@router.post("/upload/")
+def sanitize_filename(filename: str) -> str:
+    # Remove path separators and keep only the basename
+    return os.path.basename(filename).replace("..", "")
+
+@router.post("/upload/", response_class=JSONResponse, status_code=200)
 async def upload_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    """
+    Upload a PDF file, extract its text, and store it in the database.
+    """
+    # Validate file extension (case-insensitive)
+    if not file.filename.lower().endswith('.pdf'):
+        logger.warning(f"Invalid file type attempted: {file.filename}")
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # Sanitize and ensure unique filename
+    base_filename = sanitize_filename(file.filename)
+    name, ext = os.path.splitext(base_filename)
+    file_path = os.path.join(UPLOAD_DIR, base_filename)
+    counter = 1
+    while os.path.exists(file_path):
+        file_path = os.path.join(UPLOAD_DIR, f"{name}_{counter}{ext}")
+        counter += 1
+
+    # Read file content
     try:
-        logger.info(f"Starting upload process for file: {file.filename}")
-        
-        # Validate file extension
-        if not file.filename.endswith('.pdf'):
-            logger.warning(f"Invalid file type attempted: {file.filename}")
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Only PDF files are allowed"}
-            )
-
-        # Create a unique filename
-        base_filename = os.path.basename(file.filename)
-        file_path = os.path.join(UPLOAD_DIR, base_filename)
-        counter = 1
-        while os.path.exists(file_path):
-            name, ext = os.path.splitext(base_filename)
-            file_path = os.path.join(UPLOAD_DIR, f"{name}_{counter}{ext}")
-            counter += 1
-        
-        logger.debug(f"Generated unique file path: {file_path}")
-
-        # Read and save file content
-        try:
-            contents = await file.read()
-            logger.debug(f"Successfully read file contents, size: {len(contents)} bytes")
-            
-            with open(file_path, "wb") as f:
-                f.write(contents)
-            logger.info(f"File saved successfully at: {file_path}")
-        except Exception as e:
-            logger.error(f"Error saving file: {str(e)}\n{traceback.format_exc()}")
-            return JSONResponse(
-                status_code=500,
-                content={"detail": f"Could not save file: {str(e)}"}
-            )
-
-        # Extract text content
-        try:
-            content = ""
-            with fitz.open(file_path) as doc:
-                for page_num, page in enumerate(doc):
-                    content += page.get_text()
-                    logger.debug(f"Extracted text from page {page_num + 1}")
-            logger.info("PDF text extraction completed successfully")
-        except Exception as e:
-            logger.error(f"PDF parsing error: {str(e)}\n{traceback.format_exc()}")
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"Cleaned up file after parsing error: {file_path}")
-            return JSONResponse(
-                status_code=400,
-                content={"detail": f"Could not parse PDF file: {str(e)}"}
-            )
-
-        # Save to database
-        try:
-            document = Document(
-                filename=os.path.basename(file_path),
-                file_path=file_path,
-                content=content
-            )
-            db.add(document)
-            db.commit()
-            db.refresh(document)
-            logger.info(f"Document saved to database with ID: {document.id}")
-        except Exception as e:
-            logger.error(f"Database error: {str(e)}\n{traceback.format_exc()}")
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"Cleaned up file after database error: {file_path}")
-            return JSONResponse(
-                status_code=500,
-                content={"detail": f"Database error: {str(e)}"}
-            )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "document_id": document.id,
-                "message": "File uploaded successfully",
-                "filename": document.filename
-            }
-        )
-
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        logger.info(f"File saved at: {file_path}")
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Unexpected error: {str(e)}"}
+        logger.error(f"Error saving file: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
+
+    # Extract text from PDF
+    try:
+        content = ""
+        with fitz.open(file_path) as doc:
+            for page_num, page in enumerate(doc):
+                content += page.get_text()
+        logger.info(f"Extracted text from PDF: {file_path}")
+    except Exception as e:
+        logger.error(f"PDF parsing error: {str(e)}\n{traceback.format_exc()}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=400, detail=f"Could not parse PDF file: {str(e)}")
+
+    # Save to database
+    try:
+        document = Document(
+            filename=os.path.basename(file_path),
+            file_path=file_path,
+            content=content
         )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        logger.info(f"Document saved to database with ID: {document.id}")
+    except Exception as e:
+        logger.error(f"Database error: {str(e)}\n{traceback.format_exc()}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    return {
+        "document_id": document.id,
+        "message": "File uploaded successfully",
+        "filename": document.filename
+    }
+
+
+
+
+
+# import os
+# import logging
+# import traceback
+# from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+# from fastapi.responses import JSONResponse
+# from sqlalchemy.orm import Session
+# import fitz
+# from app.models import Document
+# from app.db import get_db
+
+# router = APIRouter()
+
+# # Configure detailed logging
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# )
+# logger = logging.getLogger(__name__)
+
+# # Create uploads directory in the current working directory
+# UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
+# os.makedirs(UPLOAD_DIR, exist_ok=True)
+# logger.info(f"Upload directory created at: {UPLOAD_DIR}")
+
+# @router.post("/upload/")
+# async def upload_pdf(
+#     file: UploadFile = File(...),
+#     db: Session = Depends(get_db)
+# ):
+#     try:
+#         logger.info(f"Starting upload process for file: {file.filename}")
+        
+#         # Validate file extension
+#         if not file.filename.endswith('.pdf'):
+#             logger.warning(f"Invalid file type attempted: {file.filename}")
+#             return JSONResponse(
+#                 status_code=400,
+#                 content={"detail": "Only PDF files are allowed"}
+#             )
+
+#         # Create a unique filename
+#         base_filename = os.path.basename(file.filename)
+#         file_path = os.path.join(UPLOAD_DIR, base_filename)
+#         counter = 1
+#         while os.path.exists(file_path):
+#             name, ext = os.path.splitext(base_filename)
+#             file_path = os.path.join(UPLOAD_DIR, f"{name}_{counter}{ext}")
+#             counter += 1
+        
+#         logger.debug(f"Generated unique file path: {file_path}")
+
+#         # Read and save file content
+#         try:
+#             contents = await file.read()
+#             logger.debug(f"Successfully read file contents, size: {len(contents)} bytes")
+            
+#             with open(file_path, "wb") as f:
+#                 f.write(contents)
+#             logger.info(f"File saved successfully at: {file_path}")
+#         except Exception as e:
+#             logger.error(f"Error saving file: {str(e)}\n{traceback.format_exc()}")
+#             return JSONResponse(
+#                 status_code=500,
+#                 content={"detail": f"Could not save file: {str(e)}"}
+#             )
+
+#         # Extract text content
+#         try:
+#             content = ""
+#             with fitz.open(file_path) as doc:
+#                 for page_num, page in enumerate(doc):
+#                     content += page.get_text()
+#                     logger.debug(f"Extracted text from page {page_num + 1}")
+#             logger.info("PDF text extraction completed successfully")
+#         except Exception as e:
+#             logger.error(f"PDF parsing error: {str(e)}\n{traceback.format_exc()}")
+#             if os.path.exists(file_path):
+#                 os.remove(file_path)
+#                 logger.info(f"Cleaned up file after parsing error: {file_path}")
+#             return JSONResponse(
+#                 status_code=400,
+#                 content={"detail": f"Could not parse PDF file: {str(e)}"}
+#             )
+
+#         # Save to database
+#         try:
+#             document = Document(
+#                 filename=os.path.basename(file_path),
+#                 file_path=file_path,
+#                 content=content
+#             )
+#             db.add(document)
+#             db.commit()
+#             db.refresh(document)
+#             logger.info(f"Document saved to database with ID: {document.id}")
+#         except Exception as e:
+#             logger.error(f"Database error: {str(e)}\n{traceback.format_exc()}")
+#             if os.path.exists(file_path):
+#                 os.remove(file_path)
+#                 logger.info(f"Cleaned up file after database error: {file_path}")
+#             return JSONResponse(
+#                 status_code=500,
+#                 content={"detail": f"Database error: {str(e)}"}
+#             )
+
+#         return JSONResponse(
+#             status_code=200,
+#             content={
+#                 "document_id": document.id,
+#                 "message": "File uploaded successfully",
+#                 "filename": document.filename
+#             }
+#         )
+
+#     except Exception as e:
+#         logger.error(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
+#         return JSONResponse(
+#             status_code=500,
+#             content={"detail": f"Unexpected error: {str(e)}"}
+#         )
     
 
 
